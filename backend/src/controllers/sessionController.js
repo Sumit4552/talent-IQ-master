@@ -1,4 +1,5 @@
 import { chatClient, streamClient } from "../lib/stream.js";
+import mongoose from "mongoose";
 import Session from "../models/Session.js";
 
 export async function createSession(req, res) {
@@ -79,6 +80,10 @@ export async function getSessionById(req, res) {
   try {
     const { id } = req.params;
 
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ message: "Session not found" });
+    }
+
     const session = await Session.findById(id)
       .populate("host", "name email profileImage clerkId")
       .populate("participant", "name email profileImage clerkId");
@@ -97,6 +102,10 @@ export async function joinSession(req, res) {
     const { id } = req.params;
     const userId = req.user._id;
     const clerkId = req.user.clerkId;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ message: "Session not found" });
+    }
 
     const session = await Session.findById(id);
 
@@ -131,6 +140,10 @@ export async function endSession(req, res) {
     const { id } = req.params;
     const userId = req.user._id;
 
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ message: "Session not found" });
+    }
+
     const session = await Session.findById(id);
 
     if (!session) return res.status(404).json({ message: "Session not found" });
@@ -146,12 +159,20 @@ export async function endSession(req, res) {
     }
 
     // delete stream video call
-    const call = streamClient.video.call("default", session.callId);
-    await call.delete({ hard: true });
+    try {
+      const call = streamClient.video.call("default", session.callId);
+      await call.delete({ hard: true });
+    } catch (error) {
+      console.error("Error deleting video call:", error);
+    }
 
     // delete stream chat channel
-    const channel = chatClient.channel("messaging", session.callId);
-    await channel.delete();
+    try {
+      const channel = chatClient.channel("messaging", session.callId);
+      await channel.delete();
+    } catch (error) {
+      console.error("Error deleting chat channel:", error);
+    }
 
     session.status = "completed";
     await session.save();
@@ -168,6 +189,10 @@ export async function leaveSession(req, res) {
     const { id } = req.params;
     const userId = req.user._id;
     const clerkId = req.user.clerkId;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ message: "Session not found" });
+    }
 
     const session = await Session.findById(id);
 
@@ -190,8 +215,12 @@ export async function leaveSession(req, res) {
     await session.save();
 
     // Remove from stream chat channel
-    const channel = chatClient.channel("messaging", session.callId);
-    await channel.removeMembers([clerkId]);
+    try {
+      const channel = chatClient.channel("messaging", session.callId);
+      await channel.removeMembers([clerkId]);
+    } catch (error) {
+      console.error("Error removing member from channel:", error);
+    }
 
     res.status(200).json({ message: "Left session successfully" });
   } catch (error) {
